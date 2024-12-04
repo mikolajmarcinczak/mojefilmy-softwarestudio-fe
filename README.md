@@ -1,7 +1,6 @@
 # mojefilmy-softwarestudio-fe
 
-This template should help get you started running the client app.
-
+This should help get you started running the client app.
 
 ## Project Setup
 
