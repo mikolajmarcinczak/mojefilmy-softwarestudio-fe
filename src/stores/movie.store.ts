@@ -24,7 +24,7 @@ export const useMovieStore = defineStore('movie',{
         this.handleError('Error fetching movies ', error);
       }
     },
-    async addMovie(movie: Movie) {
+    async addMovie(movie: Omit<Movie, 'id'>) {
       try {
         await apiClient.post<Movie>('/Movies', movie);
         await this.fetchMovies();

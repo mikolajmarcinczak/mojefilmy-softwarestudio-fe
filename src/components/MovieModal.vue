@@ -14,36 +14,34 @@
                 type="text"
                 id="title"
                 class="form-control"
-                v-model="$v.form.title"
-                :class="{ 'is-invalid': $v.form.title.$error }"
+                v-model="form.title"
+								@blur="v$.title.$touch()"
+                :class="{ 'is-invalid': v$.title.$error }"
               />
-              <div class="invalid-feedback">
-                {{ getTitleError }}
-              </div>
             </div>
 
             <div class="mb-3">
-              <label for="director" class="form-label">Director</label>
+              <label for="director" class="form-label">Director *</label>
               <input
                 type="text"
                 id="director"
                 class="form-control"
-                v-model="$v.form.director"
+                v-model="form.director"
+								@blur="v$.director.$touch()"
+								:class="{ 'is-invalid': v$.director.$error }"
               />
             </div>
 
             <div class="mb-3">
-              <label for="year" class="form-label">Year *</label>
+              <label for="year" class="form-label">Year * /1900-2200/</label>
               <input
                 type="number"
                 id="year"
                 class="form-control"
-                v-model.number="$v.form.year"
-                :class="{ 'is-invalid': $v.form.year.$error }"
+                v-model.number="form.year"
+								@blur="v$.year.$touch()"
+                :class="{ 'is-invalid': v$.year.$error }"
               />
-              <div class="invalid-feedback">
-                {{ getYearError }}
-              </div>
             </div>
 
             <div class="mb-3">
@@ -52,15 +50,16 @@
                 type="number"
                 id="rate"
                 class="form-control"
-                v-model.number="$v.form.rate"
+                v-model.number="form.rate"
                 min="0"
                 max="10"
+								step="0.1"
               />
             </div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" @click="$emit('close')">Cancel</button>
-            <button type="submit" class="btn btn-primary" :disabled="$v.$invalid">Save</button>
+            <button type="submit" class="btn btn-primary" :disabled="v$.$invalid">Save</button>
           </div>
         </form>
       </div>
@@ -70,12 +69,13 @@
 </template>
 
 <script lang="ts">
-import {defineComponent} from 'vue'
+import {defineComponent, watch} from 'vue'
 import {type Movie, useMovieStore} from "@/stores/movie.store";
-//import useVuelidate from "@vuelidate/core";
-import {between, maxLength, required} from "@vuelidate/validators";
+import useVuelidate from "@vuelidate/core";
+import {between, maxLength, numeric, required} from "@vuelidate/validators";
 import {useNotificationStore} from "@/stores/notification.store";
 import {assertIsError} from "@/error.guard";
+import {reactive} from "vue";
 
 export default defineComponent({
   name: "MovieModal",
@@ -85,77 +85,75 @@ export default defineComponent({
       default: null
     },
   },
-  setup() {
-    return { /*$v: useVuelidate(),*/ movieStore: useMovieStore(), notificationStore: useNotificationStore() };
-  },
-  data() {
-    return {
-      from: {
-        id: this.movie?.id ?? 0,
-        title: this.movie?.title ?? '',
-        director: this.movie?.director ?? '',
-        year: this.movie?.year ?? 0,
-        rate: this.movie?.rate ?? 0,
-      },
-    };
-  },
-  validations() {
-    return {
-      form: {
-        title: { required, maxLength: maxLength(255) },
-        year: { required, between: between(1900, 2200) },
-      },
-    };
+	emits: ['close'],
+  setup(props) {
+		const form = reactive({
+			id: props.movie?.id ?? 0,
+			title: props.movie?.title ?? '',
+			director: props.movie?.director ?? '',
+			year: props.movie?.year ?? null,
+			rate: props.movie?.rate ?? null,
+		});
+
+		const rules = {
+			title: { required, maxLength: maxLength(255) },
+			director: { required, maxLength: maxLength(255) },
+			year: { required, between: between(1900, 2200), numeric },
+		};
+
+		const v$ = useVuelidate(rules, form);
+
+		watch(() => props.movie, (newMovie) => {
+			if (newMovie) {
+				form.id = newMovie.id;
+				form.title = newMovie.title;
+				form.director = newMovie.director;
+				form.year = newMovie.year;
+				form.rate = newMovie.rate;
+			} else {
+				form.id = 0;
+				form.title = '';
+				form.director = '';
+				form.year = null;
+				form.rate = null;
+			}
+			v$.value.$reset();
+		}, { immediate: true });
+
+    return { v$, movieStore: useMovieStore(), notificationStore: useNotificationStore(), form };
   },
   computed: {
     editMode(): boolean {
       return !!this.movie;
     },
-    getTitleError(): string {
-      const title = this.$v.form.title;
-      if (!title.$dirty) return '';
-      if (!title.required) {
-        return 'Title is required';
-      } else if (!title.maxLength) {
-        return 'Title is too long';
-      }
-      return '';
-    },
-    getYearError(): string {
-      const year = this.$v.form.year;
-      if (!year.$dirty) return '';
-      if (!year.required) {
-        return 'Year is required';
-      } else if (!year.between) {
-        return 'Year must be between 1900 and 2200';
-      }
-      return '';
-    },
   },
   methods: {
     async handleSubmit() {
       try {
-        this.$v.$touch();
-        if (this.$v.$invalid) return;
+        this.v$.title.$touch();
+        this.v$.year.$touch();
 
-        const movieData: Movie = {
-          id: this.$v.form.id,
-          title: this.$v.form.title,
-          director: this.$v.form.director,
-          year: this.$v.form.year,
-          rate: this.$v.form.rate,
-        };
+				const isValid = await this.v$.$validate() && !this.v$.$invalid;
+        if (!isValid) {
+					return;
+				}
 
-        if (this.editMode) {
+        const movieData = {
+					...this.form,
+					rate: parseFloat(this.form.rate?.toString() || '0')
+				} as Movie;
+
+        if (this.movie && this.editMode) {
           await this.movieStore.updateMovie(movieData);
         } else {
           await this.movieStore.addMovie(movieData);
         }
         await this.movieStore.fetchMovies();
+				this.v$.$reset();
         this.$emit('close');
       } catch (e: unknown) {
         assertIsError(e);
-        this.notificationStore.addNotification({ type: 'error', message: 'An unexpected error occured ' + e.message });
+        this.notificationStore.addNotification({ type: 'error', message: 'An unexpected error occurred ' + e.message });
         console.log('Error: ', e);
       }
     }
